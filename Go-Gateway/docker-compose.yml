@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  gateway:
+    build: .
+    container_name: go-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - MYSQL_DSN=root:root_password@tcp(mysql:3306)/gateway?charset=utf8mb4&parseTime=True&loc=Local
+      - REDIS_ADDR=redis:6379
+      - REDIS_PASS=
+      - JWT_SECRET=super-secret-key-123
+    depends_on:
+      - mysql
+      - redis
+    networks:
+      - gateway-network
+
+  mysql:
+    image: mysql:8.0
+    container_name: gateway-mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=root_password
+      - MYSQL_DATABASE=gateway
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./scripts/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - mysql-data:/var/lib/mysql
+    networks:
+      - gateway-network
+
+  redis:
+    image: redis:alpine
+    container_name: gateway-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - gateway-network
+
+  nginx:
+    image: nginx:alpine
+    container_name: gateway-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./conf/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - gateway
+    networks:
+      - gateway-network
+
+networks:
+  gateway-network:
+    driver: bridge
+
+volumes:
+  mysql-data:
