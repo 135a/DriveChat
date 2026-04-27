@@ -10,7 +10,6 @@ services:
       - MYSQL_DSN=root:root_password@tcp(mysql:3306)/gateway?charset=utf8mb4&parseTime=True&loc=Local
       - REDIS_ADDR=redis:6379
       - REDIS_PASS=
-      - JWT_SECRET=super-secret-key-123
     depends_on:
       - mysql
       - redis

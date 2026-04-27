@@ -12,8 +12,11 @@ RUN go mod download
 # Copy the source code
 COPY . .
 
-# Build the application
-RUN go build -o main ./cmd/main.go
+# Build the application with optimized flags:
+# -s: strip symbol table
+# -w: strip DWARF debug information
+# CGO_ENABLED=0: static compilation for scratch/alpine compatibility
+RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o main ./cmd/main.go
 
 # Final stage
 FROM alpine:latest

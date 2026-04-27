@@ -6,13 +6,7 @@ import (
 	"github.com/nym/go-gateway/internal/middleware"
 )
 
-// SetupRouter configures the API routes for the gateway and admin dashboard.
-func SetupRouter() *gin.Context {
-	// Note: In a real app, this would return *gin.Engine. 
-	// I'll return *gin.Engine in the actual implementation.
-	return nil
-}
-
+// InitRoutes configures the route pipeline for the gateway.
 func InitRoutes(r *gin.Engine) {
 	// 1. Gateway Pipeline (Order matters!)
 	// Metrics -> Blacklist -> RateLimit -> Dynamic Proxy
@@ -24,36 +18,22 @@ func InitRoutes(r *gin.Engine) {
 		gateway.Use(middleware.DynamicProxyMiddleware())
 	}
 
-	// 2. Admin Auth Routes
-	auth := r.Group("/auth")
+	// 2. Management API (no auth - restrict via network policy in production)
+	api := r.Group("/api")
 	{
-		auth.POST("/register", controllers.Register)
-		auth.POST("/login", controllers.Login)
-	}
-
-	// 3. Admin Dashboard API (Protected by JWT)
-	admin := r.Group("/admin")
-	admin.Use(middleware.JWTAuthMiddleware())
-	{
-		// Sys Config
-		admin.GET("/config", controllers.GetSysConfig)
-		admin.POST("/config", controllers.UpdateSysConfig)
-
-		// Routes
-		admin.GET("/routes", controllers.GetRoutes)
-		admin.POST("/routes", controllers.CreateRoute)
-		admin.PUT("/routes/:id", controllers.UpdateRoute)
-		admin.DELETE("/routes/:id", controllers.DeleteRoute)
+		// Route Rules
+		api.GET("/routes", controllers.GetRoutes)
+		api.POST("/routes", controllers.CreateRoute)
+		api.PUT("/routes/:id", controllers.UpdateRoute)
+		api.DELETE("/routes/:id", controllers.DeleteRoute)
 
 		// Blacklist
-		admin.GET("/blacklist", controllers.GetBlacklist)
-		admin.POST("/blacklist", controllers.CreateBlacklist)
-		admin.DELETE("/blacklist/:id", controllers.DeleteBlacklist)
+		api.GET("/blacklist", controllers.GetBlacklist)
+		api.POST("/blacklist", controllers.CreateBlacklist)
+		api.DELETE("/blacklist/:id", controllers.DeleteBlacklist)
 
-		// Logs
-		admin.GET("/logs", controllers.GetBlockLogs)
-
-		// Metrics
-		admin.GET("/metrics", controllers.GetMetrics)
+		// Logs & Metrics
+		api.GET("/logs", controllers.GetBlockLogs)
+		api.GET("/metrics", controllers.GetMetrics)
 	}
 }

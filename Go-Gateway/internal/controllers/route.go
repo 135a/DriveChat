@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/nym/go-gateway/internal/models"
+	"github.com/nym/go-gateway/internal/services"
 	"github.com/nym/go-gateway/pkg/mysql"
 	"github.com/nym/go-gateway/pkg/redis"
 )
@@ -40,6 +41,9 @@ func CreateRoute(c *gin.Context) {
 
 	// Update Redis cache
 	redis.Client.HSet(redis.Ctx, KeyRoutesHash, route.PathPrefix, route.TargetURL)
+
+	// Notify gateway to rebuild Trie
+	services.PublishRouteSync()
 
 	c.JSON(http.StatusOK, route)
 }
@@ -84,6 +88,9 @@ func UpdateRoute(c *gin.Context) {
 		redis.Client.HDel(redis.Ctx, KeyRoutesHash, route.PathPrefix)
 	}
 
+	// Notify gateway to rebuild Trie
+	services.PublishRouteSync()
+
 	c.JSON(http.StatusOK, route)
 }
 
@@ -98,6 +105,9 @@ func DeleteRoute(c *gin.Context) {
 
 	redis.Client.HDel(redis.Ctx, KeyRoutesHash, route.PathPrefix)
 	mysql.DB.Delete(&route)
+
+	// Notify gateway to rebuild Trie
+	services.PublishRouteSync()
 
 	c.JSON(http.StatusOK, gin.H{"message": "Route deleted"})
 }

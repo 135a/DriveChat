@@ -5,46 +5,30 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/nym/go-gateway/internal/router"
 	"github.com/nym/go-gateway/internal/services"
-	"github.com/nym/go-gateway/pkg/redis"
 )
 
-// DynamicProxyMiddleware handles matching the request path to a target URL in Redis.
+// DynamicProxyMiddleware handles matching the request path to a target URL using the Trie router.
 func DynamicProxyMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Only proxy if not an admin/config route (handled by other groups)
-		if strings.HasPrefix(c.Request.URL.Path, "/admin") || strings.HasPrefix(c.Request.URL.Path, "/auth") {
+		// Only proxy if not a management API route
+		if strings.HasPrefix(c.Request.URL.Path, "/api") {
 			c.Next()
 			return
 		}
 
-		// Get routes from Redis hash
-		routes, err := redis.Client.HGetAll(redis.Ctx, "global:gateway:routes").Result()
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load routes"})
-			c.Abort()
-			return
-		}
+		// Match route using in-memory Trie (O(K) complexity)
+		route, _ := router.Global.Search(c.Request.URL.Path)
 
-		var targetURL string
-		path := c.Request.URL.Path
-
-		// Match path prefix (Longest prefix match would be better, but let's start simple)
-		for prefix, target := range routes {
-			if strings.HasPrefix(path, prefix) {
-				targetURL = target
-				break
-			}
-		}
-
-		if targetURL == "" {
+		if route == nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": "No route matched"})
 			c.Abort()
 			return
 		}
 
 		// Perform proxying
-		services.ProxyRequest(c, targetURL)
+		services.ProxyRequest(c, route.TargetURL)
 		c.Abort() // Proxy handles the response
 	}
 }

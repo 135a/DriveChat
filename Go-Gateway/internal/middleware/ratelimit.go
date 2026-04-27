@@ -1,7 +1,9 @@
 package middleware
 
 import (
+	_ "embed"
 	"fmt"
+	"math/rand"
 	"net/http"
 	"time"
 
@@ -11,16 +13,19 @@ import (
 	"github.com/nym/go-gateway/pkg/redis"
 )
 
-// RateLimitMiddleware implements dual-threshold rate limiting.
+//go:embed lua/sliding_window.lua
+var slidingWindowScript string
+
+// RateLimitMiddleware implements dual-threshold rate limiting using Lua-based sliding window.
 func RateLimitMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		clientIP := c.ClientIP()
-		key := fmt.Sprintf("gateway:ratelimit:%s:%d", clientIP, time.Now().Unix()/60) // Per minute
+		key := fmt.Sprintf("gateway:ratelimit:%s", clientIP)
 
 		// Get thresholds from Redis (or use defaults)
 		slightlyThreshold := 50
 		tooThreshold := 100
-		
+
 		val, _ := redis.Client.Get(redis.Ctx, "global:sys_config:slightly_freq_threshold").Int()
 		if val > 0 {
 			slightlyThreshold = val
@@ -30,21 +35,29 @@ func RateLimitMiddleware() gin.HandlerFunc {
 			tooThreshold = val
 		}
 
-		count, err := redis.Client.Incr(redis.Ctx, key).Result()
-		if err == nil && count == 1 {
-			redis.Client.Expire(redis.Ctx, key, time.Minute)
-		}
+		now := time.Now().UnixMilli()
+		member := fmt.Sprintf("%d:%d", now, rand.Int63())
+		windowMs := int64(60000) // 1 minute sliding window
 
-		// Too Frequent -> Auto Blacklist
-		if int(count) > tooThreshold {
-			autoBlacklist(clientIP, c.Request.URL.Path)
-			c.JSON(http.StatusForbidden, gin.H{"error": "Access denied: Auto-blacklisted due to excessive requests"})
-			c.Abort()
+		// Execute Lua script atomically: check against "slightly frequent" threshold
+		result, err := redis.Client.Eval(redis.Ctx, slidingWindowScript, []string{key}, windowMs, slightlyThreshold, now, member).Int()
+		if err != nil {
+			// On Redis error, fail open (allow request)
+			c.Next()
 			return
 		}
 
-		// Slightly Frequent -> 429
-		if int(count) > slightlyThreshold {
+		if result == 1 {
+			// Check current count to determine if it's "too frequent" (auto-blacklist)
+			count, _ := redis.Client.ZCard(redis.Ctx, key).Result()
+			if int(count) > tooThreshold {
+				autoBlacklist(clientIP, c.Request.URL.Path)
+				c.JSON(http.StatusForbidden, gin.H{"error": "Access denied: Auto-blacklisted due to excessive requests"})
+				c.Abort()
+				return
+			}
+
+			// Slightly Frequent -> 429
 			c.JSON(http.StatusTooManyRequests, gin.H{"error": "Too many requests"})
 			c.Abort()
 			return
